@@ -1,9 +1,12 @@
 
-
 #include "OpenDoor.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/AudioComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Actor.h"
+
+#define OUT
 
 // Sets default values for this component's properties
 UOpenDoor::UOpenDoor()
@@ -24,26 +27,41 @@ void UOpenDoor::BeginPlay()
 	InitialYaw = GetOwner()->GetActorRotation().Yaw;
 	OpenAngle += InitialYaw;
 
+	FindPressurePlate();
+	
+
+	FindAudioComponent();
+}
+
+void UOpenDoor::FindAudioComponent()
+{
+	AudioComponent = GetOwner()->FindComponentByClass<UAudioComponent>();
+
+	if(!AudioComponent)
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s Missing Audio Component!"), *GetOwner()->GetName());
+	}
+}
+
+void UOpenDoor::FindPressurePlate()
+{
 	if(!PressurePlate)
 	{
 		UE_LOG(LogTemp, Error, TEXT("5s has the opern door component on it, but no pressureplate set!"), *GetOwner()->GetName());
 	}
-
-	ActorThatOpens = GetWorld()->GetFirstPlayerController()->GetPawn();
 }
-
 
 // Called every frame
 void UOpenDoor::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if(PressurePlate && PressurePlate->IsOverlappingActor(ActorThatOpens))
+	if(TotalMassOfActors() > MassToOpenDoors)
 	{
 		OpenDoor(DeltaTime);
 		DoorLastOpened = GetWorld()->GetTimeSeconds();
 	}
-	else if(!PressurePlate->IsOverlappingActor(ActorThatOpens))
+	else
 	{
 		if(GetWorld()->GetTimeSeconds() - DoorLastOpened >= DoorCloseDelay)
 		{
@@ -59,8 +77,15 @@ void UOpenDoor::OpenDoor(float DeltaTime)
 	CurrentYaw = GetOwner()->GetActorRotation().Yaw;
 
 	FRotator NewRotation(0.f, FMath::FInterpTo(CurrentYaw, OpenAngle, DeltaTime, DoorOpenSpeed/*Current Yaw, Target Yaw, 0-1*/), 0.f);
-
 	GetOwner()->SetActorRotation(NewRotation);
+
+	CloseDoorSound = false;
+	if(!AudioComponent) {return;}
+	if(!OpenDoorSound)
+	{
+		AudioComponent->Play();
+		OpenDoorSound = true;
+	}
 }
 
 void UOpenDoor::CloseDoor(float DeltaTime)
@@ -70,6 +95,30 @@ void UOpenDoor::CloseDoor(float DeltaTime)
 	CurrentYaw = GetOwner()->GetActorRotation().Yaw;
 
 	FRotator NewRotation(0.f, FMath::FInterpTo(CurrentYaw, InitialYaw, DeltaTime, DoorCloseSpeed/*Current Yaw, Target Yaw, 0-1*/), 0.f);
-
 	GetOwner()->SetActorRotation(NewRotation);
+
+	OpenDoorSound = false;
+	if(!AudioComponent) {return;}
+	if(!CloseDoorSound)
+	{
+		AudioComponent->Play();
+		CloseDoorSound = true;
+	}
+}
+
+float UOpenDoor::TotalMassOfActors() const
+{
+	float TotalMass = 0.f;
+
+	//Find all overlapping actors
+	TArray<AActor*> OverlappingActors;
+	if(!PressurePlate) {return TotalMass;}
+	PressurePlate->GetOverlappingActors(OUT OverlappingActors);
+
+	for(AActor* Actor : OverlappingActors)
+	{
+		TotalMass += Actor->FindComponentByClass<UPrimitiveComponent>()->GetMass();
+	}
+
+	return TotalMass;
 }
